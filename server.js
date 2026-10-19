@@ -1,6 +1,7 @@
 const dns = require('dns');
 
-// Use Google's DNS servers to work around the local DNS issue.
+// Workaround for the DNS issue you encountered locally.
+// We can remove this for Azure if it is not needed there.
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const express = require('express');
@@ -8,23 +9,24 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
 
-// Load environment variables from config/.env.
 dotenv.config({
   path: path.join(__dirname, 'config', '.env')
 });
 
-// Import the User model.
 const User = require('./models/User');
 
-// Create the Express application.
 const app = express();
+const PORT = process.env.PORT || 5000;
+const publicPath = path.join(__dirname, 'public');
 
-// Allow Express to receive JSON data.
 app.use(express.json());
 
+// Serve the built React frontend files.
+app.use(express.static(publicPath));
+
 // Welcome route and health check.
-app.get('/', (req, res) => {
-  res.status(200).send('Welcome to the User REST API!');
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ message: 'API is running!' });
 });
 
 // GET: Retrieve all users.
@@ -53,16 +55,11 @@ app.put('/api/users/:id', async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       req.body,
-      {
-        new: true,
-        runValidators: true
-      }
+      { new: true, runValidators: true }
     );
 
     if (!updatedUser) {
-      return res.status(404).json({
-        message: 'User not found'
-      });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     res.status(200).json(updatedUser);
@@ -74,32 +71,32 @@ app.put('/api/users/:id', async (req, res) => {
 // DELETE: Delete a user by ID.
 app.delete('/api/users/:id', async (req, res) => {
   try {
-    const deletedUser = await User.findByIdAndDelete(
-      req.params.id
-    );
+    const deletedUser = await User.findByIdAndDelete(req.params.id);
 
     if (!deletedUser) {
-      return res.status(404).json({
-        message: 'User not found'
-      });
+      return res.status(404).json({ message: 'User not found' });
     }
 
-    res.status(200).json({
-      message: 'User deleted successfully'
-    });
+    res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
-// Use the port provided by Azure, or 5000 locally.
-const PORT = process.env.PORT || 5000;
+// Return the React app for browser routes.
+app.get(/.*/, (req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ message: 'API route not found' });
+  }
 
-// Connect to MongoDB before starting the server.
+  res.sendFile(path.join(publicPath, 'index.html'), (error) => {
+    if (error) next(error);
+  });
+});
+
 async function startServer() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
-
     console.log('MongoDB connected successfully!');
 
     app.listen(PORT, () => {
